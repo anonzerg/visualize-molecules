@@ -5,4 +5,4 @@ build:
 $ git clone --depth=1 https://github.com/anonzerg/visualize-molecules.git
 $ cd  visualize-molecules
 $ make
-$ ./bin/visualize input.xyz
+$ ./bin/visualize ./example/oxygen.xyz
