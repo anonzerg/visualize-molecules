@@ -1,2 +1,8 @@
 visualize-molecules
 A simple molecule visualization tool from xyz files.
+
+build:
+$ git clone --depth=1 https://github.com/anonzerg/visualize-molecules.git
+$ cd  visualize-molecules
+$ make
+$ ./bin/visualize input.xyz
