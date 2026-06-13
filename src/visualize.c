@@ -68,13 +68,13 @@ static Color atom_colors[119] = {
     {170, 170, 170, 255},
 };
 
-Frame *frames;     // all frames from the xyz file
-static int fCap;   // allocated capacity for frames
-int nFrames;       // number of frames
-int currentFrame;  // currently displayed frame index
-Bond *bonds;       // bond list for current frame
-static int bCap;   // allocated capacity for bonds
-int nBonds;        // number of bonds
+Frame *frames;    // all frames from the xyz file
+static int fCap;  // allocated capacity for frames
+int nFrames;      // number of frames
+int currentFrame; // currently displayed frame index
+Bond *bonds;      // bond list for current frame
+static int bCap;  // allocated capacity for bonds
+int nBonds;       // number of bonds
 
 int showBonds = 0;      // toggle bond rendering
 int showLabels = 0;     // toggle element labels
