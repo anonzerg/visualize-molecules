@@ -123,9 +123,8 @@ int main(int argc, char **argv) {
              currentFrame + 1, nFrames, fr->nAtoms, nBonds,
              playing ? "  [Playing]" : "  [Paused]");
     DrawText(buf, 10, 10, 36, DARKGRAY);
-    DrawText("[B] bonds, [L] labels, [R] reset, [+/-] size, "
-             "[WASD] panning, [Enter] step, [0] first frame, [P] play/pause, "
-             "[Mouse Drag] Rotate",
+    DrawText("[B] bonds, [L] labels, [+/-] size, [WASD] panning, [Enter] step, "
+             "[0] first frame, [P] play/pause, [Mouse Drag] rotate",
              10, 52, 36, DARKGRAY);
 
     EndDrawing();
