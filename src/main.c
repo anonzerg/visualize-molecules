@@ -24,7 +24,8 @@ int main(int argc, char **argv) {
   double maxd = 0;
   for (int i = 0; i < fr->nAtoms; i++) {
     double d =
-        sqrt(fr->atoms[i].x * fr->atoms[i].x + fr->atoms[i].y * fr->atoms[i].y);
+        sqrt(fr->atoms[i].x * fr->atoms[i].x + fr->atoms[i].y * fr->atoms[i].y +
+             fr->atoms[i].z * fr->atoms[i].z);
     if (d > maxd)
       maxd = d;
   }
@@ -72,7 +73,7 @@ int main(int argc, char **argv) {
     }
     if (IsKeyPressed(KEY_P)) {
       playing = !playing;
-      palyTimer = 0;
+      playTimer = 0;
     }
 
     /* WASD panning  */
@@ -90,10 +91,10 @@ int main(int argc, char **argv) {
 
     /* ---- auto-play ---- */
     if (playing && nFrames > 1) {
-      palyTimer += GetFrameTime();
+      playTimer += GetFrameTime();
 
-      if (palyTimer >= playDelay) {
-        palyTimer = 0;
+      if (playTimer >= playDelay) {
+        playTimer = 0;
         if (++currentFrame >= nFrames)
           currentFrame = 0;
         computeBonds(&frames[currentFrame]);
@@ -109,8 +110,8 @@ int main(int argc, char **argv) {
 
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
       Vector2 delta = GetMouseDelta();
-      panX += delta.x;
-      panY += delta.y;
+      rotX += delta.x * 0.005f;
+      rotY += delta.y * 0.005f;
     }
 
     /* ---- draw ---- */
@@ -124,7 +125,8 @@ int main(int argc, char **argv) {
              playing ? "  [Playing]" : "  [Paused]");
     DrawText(buf, 10, 10, 36, DARKGRAY);
     DrawText("[B] bonds, [L] labels, [R] reset, [+/-] size, "
-             "[WASD] panning, [Enter] step, [0] first, [P] play/pause",
+             "[WASD] panning, [Enter] step, [0] first frame, [P] play/pause, "
+             "[Mouse Drag] Rotate",
              10, 52, 36, DARKGRAY);
 
     EndDrawing();

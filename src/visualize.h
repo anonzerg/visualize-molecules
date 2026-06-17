@@ -12,7 +12,7 @@
 /* one atom: element index and 2D coordinates  */
 typedef struct {
   int q;
-  float x, y;
+  float x, y, z;
 } Atom;
 
 /* one bond: indices of the two atoms in the current frame  */
@@ -26,6 +26,16 @@ typedef struct {
   int nAtoms, cap;
 } Frame;
 
+/* container for sorted atoms by depth  */
+typedef struct {
+  int idx;
+  float depth;
+  float sx, sy;
+  float r;
+  Color col;
+  int q;
+} AtomSortItem;
+
 extern Frame *frames;
 extern int nFrames;
 extern int currentFrame;
@@ -36,17 +46,19 @@ extern int showBonds;
 extern int showLabels;
 extern float atomScale;
 extern int playing;
-extern float palyTimer;
+extern float playTimer;
 extern float playDelay;
 
 extern float zoom;
 extern float panX;
 extern float panY;
-extern float rot;
+extern float rotX;
+extern float rotY;
 
 int xyz(const char *path);
 void centerFrame(Frame *fr);
 void computeBonds(const Frame *fr);
+int sortByDepth(const void *a, const void *b);
 void drawMolecule(const Frame *fr);
 void freeAll(void);
 

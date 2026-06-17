@@ -2,7 +2,7 @@ CC := clang
 CFLAGS := -std=c99 -Wall -Wextra
 LIBS := -lraylib -lm
 SRCS := $(wildcard src/*.c)
-OBJS := $(SRCS:src/.c=bin/.o)
+OBJS := $(SRCS:src/%.c=bin/%.o)
 TARGET = visualize
 
 bin/$(TARGET): $(OBJS) | bin

@@ -80,12 +80,12 @@ int showBonds = 0;      // toggle bond rendering
 int showLabels = 0;     // toggle element labels
 float atomScale = 2.0f; // atom size multiplier
 int playing = 0;        // animation state
-float palyTimer = 0.0f; // seconds since last frame advance
+float playTimer = 0.0f; // seconds since last frame advance
 float playDelay = 0.1f; // seconds between frames during playback
 
-float zoom = 60.0f;       // pixels per angstrom
-float panX = 0, panY = 0; // screen-space pan offset
-float rot = 0.0f;         // rotation angle (radians)
+float zoom = 60.0f;             // pixels per angstrom
+float panX = 0.0f, panY = 0.0f; // screen-space pan offset
+float rotX = 0.0f, rotY = 0.0f; // rotation angles
 
 /* realloc wrapper  */
 static void *xrealloc(void *p, size_t n) {
@@ -203,6 +203,7 @@ int xyz(const char *path) {
       fr->atoms[i].q = getElement(elem);
       fr->atoms[i].x = x;
       fr->atoms[i].y = y;
+      fr->atoms[i].z = z;
       count++;
     }
     if (count == 0) {
@@ -218,17 +219,20 @@ int xyz(const char *path) {
 
 /* translate atoms so their geometric centre is at the origin  */
 void centerFrame(Frame *fr) {
-  float cx = 0, cy = 0;
+  float cx = 0, cy = 0, cz = 0;
   int n = fr->nAtoms;
   for (int i = 0; i < n; i++) {
     cx += fr->atoms[i].x;
     cy += fr->atoms[i].y;
+    cz += fr->atoms[i].z;
   }
   cx /= n;
   cy /= n;
+  cz /= n;
   for (int i = 0; i < n; i++) {
     fr->atoms[i].x -= cx;
     fr->atoms[i].y -= cy;
+    fr->atoms[i].z -= cz;
   }
 }
 
@@ -244,7 +248,8 @@ void computeBonds(const Frame *fr) {
       float rj = radii[abs(fr->atoms[j].q)] * atomScale;
       float dx = fr->atoms[i].x - fr->atoms[j].x;
       float dy = fr->atoms[i].y - fr->atoms[j].y;
-      float dist = sqrtf(dx * dx + dy * dy);
+      float dz = fr->atoms[i].z - fr->atoms[j].z;
+      float dist = sqrtf(dx * dx + dy * dy + dz * dz);
       if (dist < BOND_SCALE * (ri + rj) && dist > 0.01f) {
         bonds[nBonds].a = i;
         bonds[nBonds].b = j;
@@ -252,6 +257,16 @@ void computeBonds(const Frame *fr) {
       }
     }
   }
+}
+
+/* rotate the whole system in 3D */
+static void rotate3D(float x, float y, float z, float rx, float ry, float *ox,
+                     float *oy, float *oz) {
+  float sy = sinf(rx), cx = cosf(rx);
+  float sx = sinf(ry), cy = cosf(ry);
+  *ox = x * cy + z * sy;
+  *oy = x * sx * sy + y * cx - z * sx * cy;
+  *oz = -x * cx * sy + y * sx + z * cx * cy;
 }
 
 /* draws a filled circle with outline  */
@@ -270,21 +285,64 @@ static void drawBondLine(float x1, float y1, float x2, float y2, float lw) {
              (Color){160, 160, 160, 255});
 }
 
+/* compare pairs of atom by depth  */
+int sortByDepth(const void *a, const void *b) {
+  float da = ((const AtomSortItem *)a)->depth;
+  float db = ((const AtomSortItem *)b)->depth;
+  if (da < db)
+    return -1;
+  if (da > db)
+    return 1;
+  return 0;
+}
+
+/* draw lables on each atom  */
+static void drawLabels(const AtomSortItem *items, int n, int fs) {
+  for (int i = 0; i < n; i++) {
+    const char *label = names[items[i].q] ? names[items[i].q] : "?";
+    int textWidth = MeasureText(label, fs);
+    DrawText(label, items[i].sx - textWidth / 2, items[i].sy - fs / 2, fs,
+             BLACK);
+  }
+}
+
 /* renders the current frame: scale and translate atoms, then draw  */
 void drawMolecule(const Frame *fr) {
   int n = fr->nAtoms;
   int w = GetScreenWidth(), h = GetScreenHeight();
-  float s = cosf(rot), c = sinf(rot);
-  float sc = zoom * 0.32f; // size factor: maps radii from Å to screen pixels
+  float sc = zoom * 0.32f;
+
+  AtomSortItem *items = malloc(n * sizeof(AtomSortItem));
+  if (!items)
+    return;
+
+  for (int i = 0; i < n; i++) {
+    int q = abs(fr->atoms[i].q);
+    if (q > 118)
+      q = 0;
+    float x, y, z;
+    rotate3D(fr->atoms[i].x, fr->atoms[i].y, fr->atoms[i].z, rotX, rotY, &x, &y,
+             &z);
+    items[i].idx = i;
+    items[i].depth = z;
+    items[i].sx = w / 2 + x * zoom + panX;
+    items[i].sy = h / 2 + y * zoom + panY;
+    items[i].r = radii[q] * atomScale * sc;
+    items[i].col = atom_colors[q];
+    items[i].q = q;
+  }
+
+  qsort(items, n, sizeof(AtomSortItem), sortByDepth);
 
   /* draw bonds first  */
   if (showBonds) {
     for (int i = 0; i < nBonds; i++) {
       int ai = bonds[i].a, bi = bonds[i].b;
-      float x1 = fr->atoms[ai].x * s - fr->atoms[ai].y * c;
-      float y1 = fr->atoms[ai].x * c + fr->atoms[ai].y * s;
-      float x2 = fr->atoms[bi].x * s - fr->atoms[bi].y * c;
-      float y2 = fr->atoms[bi].x * c + fr->atoms[bi].y * s;
+      float x1, y1, z1, x2, y2, z2;
+      rotate3D(fr->atoms[ai].x, fr->atoms[ai].y, fr->atoms[ai].z, rotX, rotY,
+               &x1, &y1, &z1);
+      rotate3D(fr->atoms[bi].x, fr->atoms[bi].y, fr->atoms[bi].z, rotX, rotY,
+               &x2, &y2, &z2);
       float lw = (radii[abs(fr->atoms[ai].q)] + radii[abs(fr->atoms[bi].q)]) *
                  sc * 0.3f;
       float sx1 = w / 2 + x1 * zoom + panX, sy1 = h / 2 + y1 * zoom + panY;
@@ -295,22 +353,14 @@ void drawMolecule(const Frame *fr) {
 
   /* draw atoms  */
   for (int i = 0; i < n; i++) {
-    int q = abs(fr->atoms[i].q);
-    if (q > 118)
-      q = 0;
-    float x = fr->atoms[i].x * s - fr->atoms[i].y * c;
-    float y = fr->atoms[i].x * c + fr->atoms[i].y * s;
-    float sx = w / 2 + x * zoom + panX;
-    float sy = h / 2 + y * zoom + panY;
-    float r = radii[q] * atomScale * sc;
-    drawAtom(sx, sy, r, atom_colors[q]);
-    if (showLabels) {
-      int fs = (int)(sc * 10);
-      if (fs < 32)
-        fs = 32;
-      const char *label = names[q] ? names[q] : "?";
-      int tw = MeasureText(label, fs);
-      DrawText(label, sx - tw / 2, sy - fs / 2, fs, BLACK);
-    }
+    drawAtom(items[i].sx, items[i].sy, items[i].r, items[i].col);
   }
+  if (showLabels) {
+    int fs = (int)(sc * 10);
+    if (fs < 32)
+      fs = 32;
+    drawLabels(items, n, fs);
+  }
+
+  free(items);
 }
