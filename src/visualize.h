@@ -2,6 +2,7 @@
 #define VISUALIZE_H
 
 #include <raylib.h>
+#include <raymath.h>
 #include <stddef.h>
 
 #define MAX_ATOMS 999        // max atoms per frame
@@ -12,7 +13,7 @@
 /* one atom: element index and 2D coordinates  */
 typedef struct {
   int q;
-  float x, y, z;
+  Vector3 pos;
 } Atom;
 
 /* one bond: indices of the two atoms in the current frame  */
@@ -30,9 +31,9 @@ typedef struct {
 typedef struct {
   int idx;
   float depth;
-  float sx, sy;
-  float r;
-  Color col;
+  Vector2 center;
+  float radius;
+  Color color;
   int q;
 } AtomSortItem;
 
@@ -50,10 +51,9 @@ extern float playTimer;
 extern float playDelay;
 
 extern float zoom;
-extern float panX;
-extern float panY;
-extern float rotX;
-extern float rotY;
+extern Vector2 pan;
+extern float alpha;
+extern float beta;
 
 int xyz(const char *path);
 void centerFrame(Frame *fr);

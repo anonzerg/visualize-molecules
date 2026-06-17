@@ -34,7 +34,7 @@ static const char *names[119] = {
 };
 
 /* CPK-inspired atom colours indexed by atomic number  */
-static Color atom_colors[119] = {
+static Color atomColors[119] = {
     {0, 0, 0, 255},       {191, 191, 191, 255}, {170, 255, 255, 255},
     {255, 0, 0, 255},     {0, 255, 0, 255},     {255, 221, 255, 255},
     {95, 95, 95, 255},    {31, 31, 191, 255},   {191, 31, 31, 255},
@@ -83,12 +83,12 @@ int playing = 0;        // animation state
 float playTimer = 0.0f; // seconds since last frame advance
 float playDelay = 0.1f; // seconds between frames during playback
 
-float zoom = 60.0f;             // pixels per angstrom
-float panX = 0.0f, panY = 0.0f; // screen-space pan offset
-float rotX = 0.0f, rotY = 0.0f; // rotation angles
+float zoom = 60.0f;              // pixels per angstrom
+Vector2 pan = {0.0f, 0.0f};      // screen-space pan offset
+float alpha = 0.0f, beta = 0.0f; // rotation angles (radians)
 
 /* realloc wrapper  */
-static void *xrealloc(void *p, size_t n) {
+static void *_realloc(void *p, size_t n) {
   p = realloc(p, n);
   if (!p) {
     fprintf(stderr, "error: realloc failed (%zu)\n", n);
@@ -120,7 +120,7 @@ static int getElement(const char *s) {
 static Frame *addFrame(void) {
   if (nFrames >= fCap) {
     fCap = fCap ? fCap * 2 : CHUNK;
-    frames = xrealloc(frames, fCap * sizeof(Frame));
+    frames = _realloc(frames, fCap * sizeof(Frame));
     memset(frames + nFrames, 0, (fCap - nFrames) * sizeof(Frame));
   }
   return &frames[nFrames++];
@@ -129,7 +129,7 @@ static Frame *addFrame(void) {
 /* ensure a frame's atom array has room for `n` atoms  */
 static void ensureAtoms(Frame *fr, int n) {
   if (n > fr->cap) {
-    fr->atoms = xrealloc(fr->atoms, n * sizeof(Atom));
+    fr->atoms = _realloc(fr->atoms, n * sizeof(Atom));
     fr->cap = n;
   }
   fr->nAtoms = n;
@@ -138,7 +138,7 @@ static void ensureAtoms(Frame *fr, int n) {
 /* ensure the global bond array has room for `n` bonds  */
 static void ensureBonds(int n) {
   if (n > bCap) {
-    bonds = xrealloc(bonds, n * sizeof(Bond));
+    bonds = _realloc(bonds, n * sizeof(Bond));
     bCap = n;
   }
 }
@@ -201,9 +201,7 @@ int xyz(const char *path) {
       if (fscanf(f, "%7s%f%f%f", elem, &x, &y, &z) != 4)
         break;
       fr->atoms[i].q = getElement(elem);
-      fr->atoms[i].x = x;
-      fr->atoms[i].y = y;
-      fr->atoms[i].z = z;
+      fr->atoms[i].pos = (Vector3){x, y, z};
       count++;
     }
     if (count == 0) {
@@ -219,20 +217,14 @@ int xyz(const char *path) {
 
 /* translate atoms so their geometric centre is at the origin  */
 void centerFrame(Frame *fr) {
-  float cx = 0, cy = 0, cz = 0;
+  Vector3 center = Vector3Zero();
   int n = fr->nAtoms;
   for (int i = 0; i < n; i++) {
-    cx += fr->atoms[i].x;
-    cy += fr->atoms[i].y;
-    cz += fr->atoms[i].z;
+    center = Vector3Add(center, fr->atoms[i].pos);
   }
-  cx /= n;
-  cy /= n;
-  cz /= n;
+  center = Vector3Scale(center, 1.0f / n);
   for (int i = 0; i < n; i++) {
-    fr->atoms[i].x -= cx;
-    fr->atoms[i].y -= cy;
-    fr->atoms[i].z -= cz;
+    fr->atoms[i].pos = Vector3Subtract(fr->atoms[i].pos, center);
   }
 }
 
@@ -240,17 +232,14 @@ void centerFrame(Frame *fr) {
 void computeBonds(const Frame *fr) {
   nBonds = 0;
   int n = fr->nAtoms;
-  int maxb = n * MAX_BONDS_PER_ATOM;
-  ensureBonds(maxb);
+  int maxBond = n * MAX_BONDS_PER_ATOM;
+  ensureBonds(maxBond);
   for (int i = 0; i < n; i++) {
     float ri = radii[abs(fr->atoms[i].q)] * atomScale;
     for (int j = i + 1; j < n; j++) {
       float rj = radii[abs(fr->atoms[j].q)] * atomScale;
-      float dx = fr->atoms[i].x - fr->atoms[j].x;
-      float dy = fr->atoms[i].y - fr->atoms[j].y;
-      float dz = fr->atoms[i].z - fr->atoms[j].z;
-      float dist = sqrtf(dx * dx + dy * dy + dz * dz);
-      if (dist < BOND_SCALE * (ri + rj) && dist > 0.01f) {
+      float distance = Vector3Distance(fr->atoms[i].pos, fr->atoms[j].pos);
+      if (distance < BOND_SCALE * (ri + rj) && distance > 0.01f) {
         bonds[nBonds].a = i;
         bonds[nBonds].b = j;
         nBonds++;
@@ -260,29 +249,24 @@ void computeBonds(const Frame *fr) {
 }
 
 /* rotate the whole system in 3D */
-static void rotate3D(float x, float y, float z, float rx, float ry, float *ox,
-                     float *oy, float *oz) {
-  float sy = sinf(rx), cx = cosf(rx);
-  float sx = sinf(ry), cy = cosf(ry);
-  *ox = x * cy + z * sy;
-  *oy = x * sx * sy + y * cx - z * sx * cy;
-  *oz = -x * cx * sy + y * sx + z * cx * cy;
+static Vector3 rotate3D(Vector3 pos, float alpha, float beta) {
+  Matrix r = MatrixMultiply(MatrixRotateX(alpha), MatrixRotateY(beta));
+  return Vector3Transform(pos, r);
 }
 
 /* draws a filled circle with outline  */
-static void drawAtom(float sx, float sy, float r, Color col) {
-  if (r < 1.0f)
-    r = 1.0f;
-  DrawCircle(sx, sy, r, col);
-  DrawCircleLines(sx, sy, r, BLACK);
+static void drawAtom(Vector2 center, float radius, Color color) {
+  if (radius < 1.0f)
+    radius = 1.0f;
+  DrawCircleV(center, radius, color);
+  DrawCircleLinesV(center, radius, BLACK);
 }
 
 /* draws a bond as a thick line segment  */
-static void drawBondLine(float x1, float y1, float x2, float y2, float lw) {
-  if (lw < 0.5f)
-    lw = 0.5f;
-  DrawLineEx((Vector2){x1, y1}, (Vector2){x2, y2}, lw,
-             (Color){160, 160, 160, 255});
+static void drawBondLine(Vector2 a, Vector2 b, float lineWidth) {
+  if (lineWidth < 0.5f)
+    lineWidth = 0.5f;
+  DrawLineEx(a, b, lineWidth, GRAY);
 }
 
 /* compare pairs of atom by depth  */
@@ -297,12 +281,12 @@ int sortByDepth(const void *a, const void *b) {
 }
 
 /* draw lables on each atom  */
-static void drawLabels(const AtomSortItem *items, int n, int fs) {
+static void drawLabels(const AtomSortItem *items, int n, int fontSize) {
   for (int i = 0; i < n; i++) {
     const char *label = names[items[i].q] ? names[items[i].q] : "?";
-    int textWidth = MeasureText(label, fs);
-    DrawText(label, items[i].sx - textWidth / 2, items[i].sy - fs / 2, fs,
-             BLACK);
+    int textWidth = MeasureText(label, fontSize);
+    DrawText(label, items[i].center.x - textWidth / 2,
+             items[i].center.y - fontSize / 2, fontSize, BLACK);
   }
 }
 
@@ -320,15 +304,13 @@ void drawMolecule(const Frame *fr) {
     int q = abs(fr->atoms[i].q);
     if (q > 118)
       q = 0;
-    float x, y, z;
-    rotate3D(fr->atoms[i].x, fr->atoms[i].y, fr->atoms[i].z, rotX, rotY, &x, &y,
-             &z);
+    Vector3 rot = rotate3D(fr->atoms[i].pos, alpha, beta);
     items[i].idx = i;
-    items[i].depth = z;
-    items[i].sx = w / 2 + x * zoom + panX;
-    items[i].sy = h / 2 + y * zoom + panY;
-    items[i].r = radii[q] * atomScale * sc;
-    items[i].col = atom_colors[q];
+    items[i].depth = rot.z;
+    items[i].center.x = w / 2 + rot.x * zoom + pan.x;
+    items[i].center.y = h / 2 + rot.y * zoom + pan.y;
+    items[i].radius = radii[q] * atomScale * sc;
+    items[i].color = atomColors[q];
     items[i].q = q;
   }
 
@@ -338,28 +320,28 @@ void drawMolecule(const Frame *fr) {
   if (showBonds) {
     for (int i = 0; i < nBonds; i++) {
       int ai = bonds[i].a, bi = bonds[i].b;
-      float x1, y1, z1, x2, y2, z2;
-      rotate3D(fr->atoms[ai].x, fr->atoms[ai].y, fr->atoms[ai].z, rotX, rotY,
-               &x1, &y1, &z1);
-      rotate3D(fr->atoms[bi].x, fr->atoms[bi].y, fr->atoms[bi].z, rotX, rotY,
-               &x2, &y2, &z2);
+      Vector3 a = rotate3D(fr->atoms[ai].pos, alpha, beta);
+      Vector3 b = rotate3D(fr->atoms[bi].pos, alpha, beta);
       float lw = (radii[abs(fr->atoms[ai].q)] + radii[abs(fr->atoms[bi].q)]) *
                  sc * 0.3f;
-      float sx1 = w / 2 + x1 * zoom + panX, sy1 = h / 2 + y1 * zoom + panY;
-      float sx2 = w / 2 + x2 * zoom + panX, sy2 = h / 2 + y2 * zoom + panY;
-      drawBondLine(sx1, sy1, sx2, sy2, lw);
+      Vector2 centerA, centerB;
+      centerA.x = w / 2 + a.x * zoom + pan.x;
+      centerA.y = h / 2 + a.y * zoom + pan.y;
+      centerB.x = w / 2 + b.x * zoom + pan.x;
+      centerB.y = h / 2 + b.y * zoom + pan.y;
+      drawBondLine(centerA, centerB, lw);
     }
   }
 
   /* draw atoms  */
   for (int i = 0; i < n; i++) {
-    drawAtom(items[i].sx, items[i].sy, items[i].r, items[i].col);
+    drawAtom(items[i].center, items[i].radius, items[i].color);
   }
   if (showLabels) {
-    int fs = (int)(sc * 10);
-    if (fs < 32)
-      fs = 32;
-    drawLabels(items, n, fs);
+    int fontSize = (int)(sc * 10);
+    if (fontSize < 32)
+      fontSize = 32;
+    drawLabels(items, n, fontSize);
   }
 
   free(items);

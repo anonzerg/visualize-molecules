@@ -1,5 +1,6 @@
 #include <math.h>
 #include <raylib.h>
+#include <raymath.h>
 #include <stdio.h>
 
 #include "visualize.h"
@@ -23,9 +24,7 @@ int main(int argc, char **argv) {
   const Frame *fr = &frames[0];
   double maxd = 0;
   for (int i = 0; i < fr->nAtoms; i++) {
-    double d =
-        sqrt(fr->atoms[i].x * fr->atoms[i].x + fr->atoms[i].y * fr->atoms[i].y +
-             fr->atoms[i].z * fr->atoms[i].z);
+    float d = Vector3Length(fr->atoms[i].pos);
     if (d > maxd)
       maxd = d;
   }
@@ -34,7 +33,7 @@ int main(int argc, char **argv) {
   computeBonds(fr);
 
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-  InitWindow(1920, 1080, "Visualize Molecules");
+  InitWindow(2560, 1080, "Visualize Molecules");
   SetTargetFPS(60);
 
   zoom = fmin(GetScreenWidth(), GetScreenHeight()) / (maxd * 3.5f);
@@ -80,13 +79,13 @@ int main(int argc, char **argv) {
     {
       float ps = 5.0f;
       if (IsKeyDown(KEY_W))
-        panY -= ps;
+        pan.y -= ps;
       if (IsKeyDown(KEY_S))
-        panY += ps;
+        pan.y += ps;
       if (IsKeyDown(KEY_A))
-        panX -= ps;
+        pan.x -= ps;
       if (IsKeyDown(KEY_D))
-        panX += ps;
+        pan.x += ps;
     }
 
     /* ---- auto-play ---- */
@@ -110,8 +109,8 @@ int main(int argc, char **argv) {
 
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
       Vector2 delta = GetMouseDelta();
-      rotX += delta.x * 0.005f;
-      rotY += delta.y * 0.005f;
+      alpha += delta.y * 0.005f;
+      beta += delta.x * 0.005f;
     }
 
     /* ---- draw ---- */
