@@ -178,9 +178,10 @@ int xyz(const char *path) {
 
     /* eat my comment line  */
     int c;
-    do {
-      c = fgetc(f);
-    } while (c != EOF && c != '\n');
+    while ((c = fgetc(f)) != EOF && c != '\n')
+      ;
+    while ((c = fgetc(f)) != EOF && c != '\n')
+      ;
     if (c == EOF) {
       ret = nFrames > 0;
       break;
